@@ -42,6 +42,7 @@ public sealed record TicketQuery
     public TicketQuery Normalized() => this with
     {
         Page = Page < 1 ? 1 : Page,
-        PageSize = PageSize < 1 ? 20 : Math.Min(PageSize, MaxPageSize)
+        PageSize = PageSize < 1 ? 20 : Math.Min(PageSize, MaxPageSize),
+        Search = string.IsNullOrWhiteSpace(Search) ? null : Search.Trim()
     };
 }
