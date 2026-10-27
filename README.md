@@ -30,6 +30,13 @@ Full requirements are in **[`ASSIGNMENT_CANDIDATE.md`](ASSIGNMENT_CANDIDATE.md)*
 - **Out of scope:** registration, password reset, roles, OAuth/SSO, refresh tokens, MFA,
   notifications, CI, caching, visual redesign. Mention them under *Known limitations* instead.
 
+### DEFECT-117 root cause and fix
+
+Root cause: the ticket-list request effect depended only on search, page, and page size, so
+changing another filter updated the controls without scheduling a request. A later search change
+triggered a request with the latest filter state, making the earlier selection appear stale. The fix
+requests immediately when a non-search filter changes and debounces only search input.
+
 ### Submission
 
 1. Update this **README** with what you built, your design decisions (chosen, rejected and why),

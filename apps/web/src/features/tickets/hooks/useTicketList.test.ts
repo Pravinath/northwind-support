@@ -23,29 +23,47 @@ describe('useTicketList', () => {
     vi.clearAllMocks();
   });
 
-  it('searches with the text the user typed, once the typing settles', async () => {
+  it('requests other filter changes immediately and debounces search without losing them', async () => {
     const { result } = renderHook(() => useTicketList());
 
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(300);
+    expect(getTickets).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      result.current.updateFilters({ status: 'InProgress' });
     });
 
-    expect(getTickets).toHaveBeenCalledTimes(1);
+    expect(getTickets).toHaveBeenCalledTimes(2);
+    expect(getTickets).toHaveBeenLastCalledWith(
+      expect.objectContaining({ status: 'InProgress', search: '' }),
+    );
 
     act(() => {
       result.current.updateFilters({ search: 'invoice' });
     });
 
-    // Still inside the debounce window: no second request yet.
-    expect(getTickets).toHaveBeenCalledTimes(1);
+    // Search changes are debounced, but keep the latest non-search filter values.
+    expect(getTickets).toHaveBeenCalledTimes(2);
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(300);
     });
 
-    expect(getTickets).toHaveBeenCalledTimes(2);
+    expect(getTickets).toHaveBeenCalledTimes(3);
     expect(getTickets).toHaveBeenLastCalledWith(
-      expect.objectContaining({ search: 'invoice', page: 1 }),
+      expect.objectContaining({ search: 'invoice', status: 'InProgress', page: 1 }),
+    );
+
+    act(() => {
+      result.current.updateFilters({ search: '' });
+    });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300);
+    });
+
+    expect(getTickets).toHaveBeenCalledTimes(4);
+    expect(getTickets).toHaveBeenLastCalledWith(
+      expect.objectContaining({ search: '', status: 'InProgress' }),
     );
 
     expect(result.current.isLoading).toBe(false);
