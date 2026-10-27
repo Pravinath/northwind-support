@@ -30,13 +30,26 @@ public static class DependencyInjection
         services.AddScoped<IUnitOfWork>(sp => sp.GetRequiredService<SupportDbContext>());
 
         services.AddSingleton<IClock, SystemClock>();
+        var sla = configuration.GetSection("Sla");
+        var windows = sla.GetSection("BaseWindowHours").GetChildren()
+            .Where(x => double.TryParse(x.Value, out _))
+            .ToDictionary(x => x.Key, x => double.Parse(x.Value!), StringComparer.OrdinalIgnoreCase);
+        services.AddSingleton(new TicketTriageOptions
+        {
+            BaseWindowHours = windows,
+            PremiumCustomerMultiplier = double.TryParse(sla["PremiumCustomerMultiplier"], out var multiplier) ? multiplier : 0.5,
+            MinimumWindowHours = double.TryParse(sla["MinimumWindowHours"], out var floor) ? floor : 1,
+            AtRiskThresholdPercent = double.TryParse(sla["AtRiskThresholdPercent"], out var threshold) ? threshold : 25
+        });
 
         services.AddScoped<ITicketRepository, TicketRepository>();
+        services.AddScoped<ITicketEscalationRepository, TicketEscalationRepository>();
         services.AddScoped<IAgentRepository, AgentRepository>();
         services.AddScoped<ICustomerRepository, CustomerRepository>();
         services.AddScoped<ICategoryRepository, CategoryRepository>();
 
         services.AddScoped<ITicketQueries, TicketQueries>();
+        services.AddScoped<ITicketTriageQueries, TicketTriageQueries>();
         services.AddScoped<ICustomerQueries, CustomerQueries>();
         services.AddScoped<IAgentQueries, AgentQueries>();
         services.AddScoped<ICategoryQueries, CategoryQueries>();

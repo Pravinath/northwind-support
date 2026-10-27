@@ -1,6 +1,7 @@
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using SupportDesk.Application.Contracts.Tickets;
+using SupportDesk.Application.Abstractions;
 using SupportDesk.Domain.Aggregates.Agents;
 using SupportDesk.Domain.Aggregates.Categories;
 using SupportDesk.Domain.Aggregates.Customers;
@@ -77,6 +78,18 @@ public sealed class TicketQueriesTests
         Assert.Equal("TCK-0043", Assert.Single(unassigned.Items).Reference);
     }
 
+    [Fact]
+    public async Task FiltersAtRiskSlaInDatabaseBeforePaging()
+    {
+        await using var database = await TestDatabase.CreateAsync();
+        var result = await database.Queries.GetPagedAsync(
+            new TicketQuery { SlaStatus = SlaStatus.AtRisk, PageSize = 1 }.Normalized(), CancellationToken.None);
+        Assert.Single(result.Items);
+        Assert.Equal(1, result.TotalCount);
+        Assert.Equal("TCK-0042", result.Items[0].Reference);
+        Assert.Equal(SlaStatus.AtRisk, result.Items[0].SlaStatus);
+    }
+
     private sealed class TestDatabase : IAsyncDisposable
     {
         private readonly SqliteConnection _connection;
@@ -85,7 +98,10 @@ public sealed class TicketQueriesTests
         {
             _connection = connection;
             Context = context;
-            Queries = new TicketQueries(context, new FixedClock());
+            Queries = new TicketQueries(context, new FixedClock(), new TicketTriageOptions
+            {
+                BaseWindowHours = new Dictionary<string, double> { ["Low"] = 72, ["Medium"] = 24, ["High"] = 8, ["Critical"] = 4 }
+            });
         }
 
         public SupportDbContext Context { get; }
@@ -166,6 +182,11 @@ public sealed class TicketQueriesTests
             {
                 ticket.AssignTo(agentId, FixedClock.DefaultNow);
             }
+
+            var due = priority == TicketPriority.Low
+                ? FixedClock.DefaultNow.AddHours(10)
+                : FixedClock.DefaultNow.AddHours(2);
+            ticket.ApplyTriage(priority, agentId, due, FixedClock.DefaultNow);
 
             if (status != TicketStatus.New)
             {

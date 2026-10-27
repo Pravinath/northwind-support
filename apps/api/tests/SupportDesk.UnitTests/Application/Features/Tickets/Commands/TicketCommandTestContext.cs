@@ -3,6 +3,7 @@ using SupportDesk.Application.Abstractions;
 using SupportDesk.Application.Contracts.Tickets;
 using SupportDesk.Application.Features.Tickets.Commands.AssignTicket;
 using SupportDesk.Application.Features.Tickets.Commands.ChangeTicketStatus;
+using SupportDesk.Application.Features.Tickets.Commands.EscalateTicket;
 using SupportDesk.Application.Features.Tickets.Commands.RaiseTicket;
 using SupportDesk.Application.Features.Tickets.Queries.GetTicket;
 using SupportDesk.Domain.Aggregates.Agents;
@@ -46,9 +47,22 @@ internal sealed class TicketCommandTestContext
 
         var getTicket = new GetTicketQueryHandler(TicketQueries.Object);
 
+        TriageQueries.Setup(q => q.GetContextAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new TicketTriageContext(true, false, false));
+        TriageQueries.Setup(q => q.GetAgentsAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<TriageAgent>());
+
+        TriageOptions = new TicketTriageOptions
+        {
+            BaseWindowHours = new Dictionary<string, double> { ["Low"] = 72, ["Medium"] = 24, ["High"] = 8, ["Critical"] = 4 }
+        };
+
         RaiseTicket = new RaiseTicketCommandHandler(
             Tickets.Object, Customers.Object, Categories.Object, UnitOfWork.Object, Clock, getTicket,
-            NullLogger<RaiseTicketCommandHandler>.Instance);
+            NullLogger<RaiseTicketCommandHandler>.Instance, TriageQueries.Object, TriageOptions);
+
+        EscalateTicket = new EscalateTicketCommandHandler(
+            Tickets.Object, EscalationHistory.Object, TriageQueries.Object, UnitOfWork.Object, Clock, TriageOptions, getTicket);
 
         ChangeTicketStatus = new ChangeTicketStatusCommandHandler(Tickets.Object, UnitOfWork.Object, Clock, getTicket);
 
@@ -69,6 +83,12 @@ internal sealed class TicketCommandTestContext
 
     public Mock<ITicketQueries> TicketQueries { get; } = new();
 
+    public Mock<ITicketTriageQueries> TriageQueries { get; } = new();
+
+    public Mock<ITicketEscalationRepository> EscalationHistory { get; } = new();
+
+    public TicketTriageOptions TriageOptions { get; }
+
     public FixedClock Clock { get; } = new();
 
     public RaiseTicketCommandHandler RaiseTicket { get; }
@@ -76,6 +96,10 @@ internal sealed class TicketCommandTestContext
     public ChangeTicketStatusCommandHandler ChangeTicketStatus { get; }
 
     public AssignTicketCommandHandler AssignTicket { get; }
+
+    public EscalateTicketCommandHandler EscalateTicket { get; }
+
+    public TicketEscalation? AddedEscalation { get; private set; }
 
     /// <summary>The ticket handed to the repository by the last create call.</summary>
     public Ticket? AddedTicket { get; private set; }
@@ -87,6 +111,13 @@ internal sealed class TicketCommandTestContext
             .ReturnsAsync(ticket);
 
         return ticket;
+    }
+
+    public void CaptureEscalation()
+    {
+        EscalationHistory.Setup(h => h.AddAsync(It.IsAny<TicketEscalation>(), It.IsAny<CancellationToken>()))
+            .Callback<TicketEscalation, CancellationToken>((entry, _) => AddedEscalation = entry)
+            .Returns(Task.CompletedTask);
     }
 
     public void ExistingAgent(int id, string fullName = "Alex Turner", bool isActive = true)

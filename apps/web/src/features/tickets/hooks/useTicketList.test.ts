@@ -25,12 +25,13 @@ describe('useTicketList', () => {
 
   it('requests other filter changes immediately and debounces search without losing them', async () => {
     const { result } = renderHook(() => useTicketList());
-
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
     expect(getTickets).toHaveBeenCalledTimes(1);
 
     act(() => {
       result.current.updateFilters({ status: 'InProgress' });
     });
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
 
     expect(getTickets).toHaveBeenCalledTimes(2);
     expect(getTickets).toHaveBeenLastCalledWith(
@@ -47,6 +48,7 @@ describe('useTicketList', () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(300);
     });
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
 
     expect(getTickets).toHaveBeenCalledTimes(3);
     expect(getTickets).toHaveBeenLastCalledWith(
@@ -60,6 +62,7 @@ describe('useTicketList', () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(300);
     });
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
 
     expect(getTickets).toHaveBeenCalledTimes(4);
     expect(getTickets).toHaveBeenLastCalledWith(

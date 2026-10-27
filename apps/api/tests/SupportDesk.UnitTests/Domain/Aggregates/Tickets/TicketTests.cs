@@ -25,6 +25,28 @@ public class TicketTests
     }
 
     [Fact]
+    public void Escalate_UpdatesPriorityOwnerDueDateAndUpdatedAt()
+    {
+        var ticket = new TicketBuilder().WithPriority(TicketPriority.Medium).Build();
+        var due = Later.AddHours(8);
+        ticket.Escalate(TicketPriority.High, 12, due, Later);
+        Assert.Equal(TicketPriority.High, ticket.Priority);
+        Assert.Equal(12, ticket.AssignedAgentId);
+        Assert.Equal(due, ticket.DueAtUtc);
+        Assert.Equal(Later, ticket.UpdatedAtUtc);
+    }
+
+    [Theory]
+    [InlineData(TicketPriority.Critical, TicketStatus.InProgress)]
+    [InlineData(TicketPriority.High, TicketStatus.Resolved)]
+    [InlineData(TicketPriority.High, TicketStatus.Closed)]
+    public void Escalate_WhenTicketIsIneligible_Throws(TicketPriority priority, TicketStatus status)
+    {
+        var ticket = new TicketBuilder().WithPriority(priority).WithStatus(status).Build();
+        Assert.Throws<BusinessRuleViolationException>(() => ticket.Escalate(TicketPriority.Critical, null, Later, Later));
+    }
+
+    [Fact]
     public void ChangeStatus_WhenResolving_StampsResolutionAndUpdateTimes()
     {
         var ticket = new TicketBuilder().WithStatus(TicketStatus.InProgress).Build();

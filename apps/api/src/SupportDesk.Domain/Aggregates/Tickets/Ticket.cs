@@ -111,4 +111,24 @@ public sealed class Ticket : AggregateRoot
         AssignedAgentId = agentId;
         UpdatedAtUtc = nowUtc;
     }
+
+    public void ApplyTriage(TicketPriority priority, int? agentId, DateTime dueAtUtc, DateTime nowUtc)
+    {
+        Priority = priority;
+        AssignedAgentId = agentId;
+        DueAtUtc = dueAtUtc;
+        UpdatedAtUtc = nowUtc;
+    }
+
+    public void Escalate(TicketPriority priority, int? agentId, DateTime dueAtUtc, DateTime nowUtc)
+    {
+        if (Priority == TicketPriority.Critical)
+            throw new BusinessRuleViolationException($"Ticket {Reference} is already Critical and cannot be escalated.");
+        if (Status is TicketStatus.Resolved or TicketStatus.Closed)
+            throw new BusinessRuleViolationException($"Ticket {Reference} is {Status} and cannot be escalated.");
+        Priority = priority;
+        AssignedAgentId = agentId;
+        DueAtUtc = dueAtUtc;
+        UpdatedAtUtc = nowUtc;
+    }
 }

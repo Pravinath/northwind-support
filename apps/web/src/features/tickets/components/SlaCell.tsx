@@ -4,6 +4,7 @@ import type { SlaStatus } from '../../../types/api';
 
 const labels: Partial<Record<SlaStatus, { text: string; tone: BadgeTone }>> = {
   Met: { text: 'Met', tone: 'success' },
+  AtRisk: { text: 'At risk', tone: 'warning' },
   Breached: { text: 'Breached', tone: 'danger' },
   WithinSla: { text: 'Within SLA', tone: 'info' },
   NotApplicable: { text: 'No SLA', tone: 'neutral' },

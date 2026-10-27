@@ -24,6 +24,20 @@ public class SlaEvaluatorTests
         Assert.Equal(SlaStatus.Breached, SlaEvaluator.Evaluate(Now.AddMinutes(-1), null, Now));
 
     [Fact]
+    public void Evaluate_OpenExactlyAtDue_IsAtRiskAtTheBoundary()
+    {
+        Assert.Equal(SlaStatus.AtRisk, SlaEvaluator.Evaluate(Now, null, Now, 25, 24));
+    }
+
+    [Fact]
     public void Evaluate_OpenAndBeforeDue_IsWithinSla() =>
-        Assert.Equal(SlaStatus.WithinSla, SlaEvaluator.Evaluate(Now.AddHours(1), null, Now));
+        Assert.Equal(SlaStatus.WithinSla, SlaEvaluator.Evaluate(Now.AddHours(7), null, Now, 25, 24));
+
+    [Fact]
+    public void Evaluate_OpenWithQuarterOfWindowRemaining_IsAtRisk() =>
+        Assert.Equal(SlaStatus.AtRisk, SlaEvaluator.Evaluate(Now.AddHours(6), null, Now, 25, 24));
+
+    [Fact]
+    public void Evaluate_OpenWithMoreThanQuarterOfWindowRemaining_IsWithinSla() =>
+        Assert.Equal(SlaStatus.WithinSla, SlaEvaluator.Evaluate(Now.AddHours(7), null, Now, 25, 24));
 }

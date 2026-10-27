@@ -33,6 +33,12 @@ export function CreateTicketPage() {
           <p>
             Raised <strong>{created.reference}</strong> for {created.customer.name}.
           </p>
+          {created.triage && <div className="triage-result">
+            <h2>Automatic triage</h2>
+            <p><strong>Priority:</strong> {created.triage.priority} — {created.triage.priorityReason}</p>
+            <p><strong>Due:</strong> {created.triage.dueAtUtc} ({created.triage.slaWindowReason})</p>
+            <p><strong>Assignment:</strong> {created.assignedAgent?.fullName ?? 'Unassigned'} — {created.triage.assignmentReason}</p>
+          </div>}
           <div className="button-row">
             <button
               type="button"

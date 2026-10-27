@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useEffectEvent, useMemo, useState } from 'react';
 import { ApiError } from '../../../api/client';
 import { ticketsApi } from '../../../api/tickets';
 import type { PagedResult, TicketFilters, TicketListItem } from '../../../types/api';
@@ -13,6 +13,7 @@ export const emptyFilters: TicketFilters = {
   customerId: undefined,
   assignedAgentId: undefined,
   unassignedOnly: false,
+  slaStatus: undefined,
   page: 1,
   pageSize: 20,
   sortBy: 'createdAtUtc',
@@ -38,6 +39,7 @@ export function useTicketList() {
     customerId,
     assignedAgentId,
     unassignedOnly,
+    slaStatus,
     page,
     pageSize,
     sortBy,
@@ -53,6 +55,7 @@ export function useTicketList() {
       customerId,
       assignedAgentId,
       unassignedOnly,
+      slaStatus,
       page,
       pageSize,
       sortBy,
@@ -66,6 +69,7 @@ export function useTicketList() {
       customerId,
       assignedAgentId,
       unassignedOnly,
+      slaStatus,
       page,
       pageSize,
       sortBy,
@@ -74,8 +78,6 @@ export function useTicketList() {
   );
 
   const load = useCallback(async () => {
-    setState((current) => ({ ...current, isLoading: true, error: undefined }));
-
     try {
       const data = await ticketsApi.getTickets(requestFilters);
       setState({ isLoading: false, data, error: undefined });
@@ -91,17 +93,28 @@ export function useTicketList() {
     return () => window.clearTimeout(handle);
   }, [filters.search]);
 
+  const loadOnEffect = useEffectEvent(() => { void load(); });
+
   useEffect(() => {
-    void load();
+    const handle = window.setTimeout(() => loadOnEffect(), 0);
+    return () => window.clearTimeout(handle);
   }, [load]);
 
-  const updateFilters = (patch: Partial<TicketFilters>) =>
+  const updateFilters = (patch: Partial<TicketFilters>) => {
+    setState((current) => ({ ...current, isLoading: true, error: undefined }));
     setFilters((current) => ({ ...current, ...patch, page: patch.page ?? 1 }));
+  };
 
   const resetFilters = () => {
+    setState((current) => ({ ...current, isLoading: true, error: undefined }));
     setFilters(emptyFilters);
     setDebouncedSearch(emptyFilters.search);
   };
 
-  return { filters, updateFilters, resetFilters, reload: load, ...state };
+  const reload = () => {
+    setState((current) => ({ ...current, isLoading: true, error: undefined }));
+    return load();
+  };
+
+  return { filters, updateFilters, resetFilters, reload, ...state };
 }
