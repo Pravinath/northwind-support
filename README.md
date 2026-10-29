@@ -27,8 +27,10 @@ MFA, notifications, CI and caching are outside scope.
   an eligible, least-loaded agent, with agent ID as a stable tie-break; if none qualifies, ticket
   creation succeeds unassigned with an explanation.
 - **Escalation:** A non-terminal ticket moves up one priority level, receives a recalculated due
-  date, and records a separate audit row. Actor identity comes from the authenticated JWT, never
-  from a user-supplied request field.
+  date, and records a separate audit row in `TicketEscalations`. The composite index
+  `IX_TicketEscalations_TicketId_EscalatedAtUtc` supports looking up one ticket's history in
+  newest-first order without sorting the full table. Actor identity comes from the authenticated
+  JWT, never from a user-supplied request field.
 - **Authentication:** Password hashes are stored on the existing Agent row. ASP.NET Identity's
   `PasswordHasher<Agent>` provides salted, versioned password hashing; plaintext passwords are not
   stored. The API issues 60-minute JWTs and requires authentication through a global fallback
@@ -63,6 +65,9 @@ MFA, notifications, CI and caching are outside scope.
 - **Migrations in Docker:** Automatically migrating every production API instance was rejected.
   Compose uses Development mode for this local assessment; a real deployment should run a
   controlled migration step before serving traffic.
+- **Patterns:** Use-case handlers keep ticket workflows independently testable, repository
+  interfaces isolate data access from application rules, and triage/SLA options keep policy values
+  configurable. These seams are used where the code needs them rather than adding a new framework.
 
 ## Run locally
 
@@ -130,7 +135,7 @@ docker compose config -q
 ```
 
 Backend unit and architecture tests do not need a database. During this assessment run, the backend
-suite passed 70 tests (66 unit and 4 architecture), and the web suite passed 14 tests; lint,
+suite passed 70 tests (66 unit and 4 architecture), and the web suite passed 15 tests; lint,
 typecheck and build passed. The API solution build also passed. NuGet reports existing moderate and
 high advisories for `System.Security.Cryptography.Pkcs` 9.0.11; this assessment did not change that
 transitive dependency. `docker compose config -q` and `docker compose build api` passed. The
@@ -148,6 +153,16 @@ Manual checks:
 6. For the container, check `GET /health`, sign in, and confirm the web proxy's API request returns
    200. The container was also checked to run as a non-root user and to exclude the development
    settings file.
+
+The running container returned `Healthy`; authenticated `GET /api/tickets` returned 200 with 42
+seeded tickets, and `docker compose exec -T api whoami` returned `app`. `docker image ls` listed
+`northwind-support-api:latest` at 457 MB. The SDK build stage, tagged `northwind-sdk-stage:check`,
+was 2.43 GB. A separate Compose project on alternate ports and a fresh, project-scoped volume
+returned `Healthy` and 40 seeded tickets; that temporary stack and volume were removed without
+affecting the existing database. The source-change rebuild check for restore-layer reuse is still
+passed in a temporary project copy: after adding a harmless C# comment, the second build showed the
+`dotnet restore` step as `CACHED` while recopying source and publishing again. The first build
+attempt in that copy hit a transient Docker DNS lookup error; its retry completed successfully.
 
 ## API at a glance
 
@@ -167,10 +182,18 @@ Manual checks:
 ## AI use and known limitations
 
 OpenAI Codex assisted with interpreting requirements, inspecting the code, investigating the filter
-defect, and implementing or reviewing selected code, tests, and documentation changes. The candidate
-ran the automated checks and manually exercised the application flows. Before submission, review
-the final diff and make sure you can explain the implementation and design choices in this README
-and `APPROACH.md`.
+defect, and implementing or reviewing selected code, tests, and documentation changes. The workflow
+that worked was to use Codex to trace a reported behavior to the relevant code, review the proposed
+change against the assessment and existing architecture, then run the focused tests and exercise the
+flow in the browser. I accepted the approach of applying API filters in the database query before
+counting and paging; that preserves correct totals and pages, and I verified it with query tests.
+I rejected client-only filtering because it would affect only the currently loaded page and make the
+result count incorrect. Codex helped identify the ticket-list defect: the request effect did not
+depend on non-search filters. The regression test and manual Network-panel check verified the fix.
+No AI-introduced defect was identified in the verification performed. I reviewed the changes and
+used backend and web tests, lint, type checking, the production build, and browser/API checks to
+verify them. Before submission, review the final diff and make sure you can explain the
+implementation and design choices in this README and `APPROACH.md`.
 
 - There is no registration, password reset, refresh token, MFA, or role/permission system.
 - Logout clears this browser's session token but does not revoke a JWT already copied elsewhere;
@@ -185,4 +208,6 @@ and `APPROACH.md`.
 Keep the requested task commits separate, update this README and `APPROACH.md`, and submit the link
 to the personal fork, development credentials, and a truthful rough time breakdown for each task.
 Use your actual time records for the breakdown; do not estimate hours after the fact as if they were
-tracked. Describe AI assistance accurately and be prepared to explain and defend the implementation.
+tracked. Reported task time: Task 1, 1.5 hours; Task 2, 4 hours; Task 3, 3 hours; Task 4, 1 hour;
+total, 9.5 hours. Describe AI assistance accurately and be prepared to explain and defend the
+implementation.
