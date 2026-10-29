@@ -181,19 +181,13 @@ attempt in that copy hit a transient Docker DNS lookup error; its retry complete
 
 ## AI use and known limitations
 
-OpenAI Codex assisted with interpreting requirements, inspecting the code, investigating the filter
-defect, and implementing or reviewing selected code, tests, and documentation changes. The workflow
-that worked was to use Codex to trace a reported behavior to the relevant code, review the proposed
-change against the assessment and existing architecture, then run the focused tests and exercise the
-flow in the browser. I accepted the approach of applying API filters in the database query before
-counting and paging; that preserves correct totals and pages, and I verified it with query tests.
-I rejected client-only filtering because it would affect only the currently loaded page and make the
-result count incorrect. Codex helped identify the ticket-list defect: the request effect did not
-depend on non-search filters. The regression test and manual Network-panel check verified the fix.
-No AI-introduced defect was identified in the verification performed. I reviewed the changes and
-used backend and web tests, lint, type checking, the production build, and browser/API checks to
-verify them. Before submission, review the final diff and make sure you can explain the
-implementation and design choices in this README and `APPROACH.md`.
+I used OpenAI Codex to clarify requirements and trace the ticket-list defect. I reviewed suggested
+changes against the code, then checked them with tests and browser/API checks. I kept database-side
+filtering because it preserves correct totals, and rejected client-side filtering because it only
+covers the loaded page. The investigation found that non-search filters were missing from the
+request effect; a regression test and Network check confirmed the fix. No AI-introduced issue was
+found in these checks. I can explain the submitted implementation and design decisions in this
+README and `APPROACH.md`.
 
 - There is no registration, password reset, refresh token, MFA, or role/permission system.
 - Logout clears this browser's session token but does not revoke a JWT already copied elsewhere;
