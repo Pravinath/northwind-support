@@ -1,189 +1,188 @@
 # Northwind Support Desk
 
 A support ticket management system: raise tickets, search and filter them, assign them to agents,
-and move them through their lifecycle.
+and move them through their lifecycle. It uses a .NET 10 API, React 19 / TypeScript, and SQL Server.
 
-**.NET 10 Web API** + **React 19 / TypeScript** + **SQL Server**, in one monorepo.
+## Assignment status
 
----
+| Task | Work completed |
+| --- | --- |
+| 1. Defect and server-side filtering | Fixed stale ticket list requests, added regression coverage, and applies filters before counting and paging. |
+| 2. Ticket triage and escalation | Automatic priority/assignment/SLA decisions, escalation audit history, and SLA filtering in the UI and API. |
+| 3. Login and authentication | Agent login with hashed passwords and JWTs, protected API and web routes, and authenticated escalation identity. |
+| 4. Dockerise the API | Multi-stage API image and Compose API service on port 5080, with SQL readiness dependency and runtime configuration. |
 
-## The assignment
+This is an assessment implementation. Registration, password reset, roles, OAuth/SSO, refresh tokens,
+MFA, notifications, CI and caching are outside scope.
 
-You are joining a team that already has this app working. Complete the tasks **in order**.
-Full requirements are in **[`ASSIGNMENT_CANDIDATE.md`](ASSIGNMENT_CANDIDATE.md)**.
+## Design decisions
 
-| # | Task | Done looks like | Effort |
-| --- | --- | --- | --- |
-| 1 | **Fix a defect, add server-side filtering** | Root cause fixed with a regression test; every list filter applied in the database with a correct count | ~2.5 h |
-| 2 | **Ticket escalation & assignment** | Automatic triage on create, escalation with history, SLA status, UI for all of it | ~7 h |
-| 3 | **Login and authentication** | Agents sign in; API rejects unauthenticated calls; login UI | ~4 h |
-| 4 | **Dockerise the API** *(optional)* | `docker compose up` gives a migrated, seeded API with no baked-in secret | ~1.5 h |
+- **DEFECT-117:** The ticket list request effect previously missed non-search filter changes. A later
+  search change then made the stale selection appear to take effect. Non-search filter changes now
+  fetch immediately; search remains debounced. API filters are composed in the EF query before
+  count and paging.
+- **Triage and SLA:** Application handlers apply policy using category flags and customer tier.
+  Response windows, Premium adjustment and thresholds are configurable. SLA state is derived from
+  timestamps and the injected clock instead of being stored and becoming stale. Assignment chooses
+  an eligible, least-loaded agent, with agent ID as a stable tie-break; if none qualifies, ticket
+  creation succeeds unassigned with an explanation.
+- **Escalation:** A non-terminal ticket moves up one priority level, receives a recalculated due
+  date, and records a separate audit row. Actor identity comes from the authenticated JWT, never
+  from a user-supplied request field.
+- **Authentication:** Password hashes are stored on the existing Agent row. ASP.NET Identity's
+  `PasswordHasher<Agent>` provides salted, versioned password hashing; plaintext passwords are not
+  stored. The API issues 60-minute JWTs and requires authentication through a global fallback
+  authorization policy. Login and Swagger remain open. Invalid email/password responses are the
+  same, and inactive agents cannot log in.
+- **Browser token storage:** The access token is kept in `sessionStorage`, attached to API requests,
+  and cleared on logout or any 401. This keeps the token for the current tab session without
+  persisting it across browser restarts. JavaScript can read session storage, so an XSS vulnerability
+  could expose the token; production would need a reviewed token-storage and CSP strategy.
+- **Docker:** The image builds from the repository root, restores before copying source for layer
+  caching, and runs as the non-root runtime user on port 8080. Compose exposes it at localhost:5080
+  and waits for SQL Server health. Configuration and signing keys are supplied at runtime. Compose
+  uses Development mode for this assessment so startup migrations and demo seeding run on an empty
+  database. For production, use a controlled migration job and production secrets; do not enable
+  development seeding or commit real credentials.
 
-### Guidance
+### Alternatives considered
 
-- **Time: 2 days.** Honestly marking a task "not finished" beats rushing all of them.
-- **Fork** this repo to your own GitHub account and work there. **Do not push to the original.**
-- **AI tools are allowed.** You must understand and be able to defend every line you submit.
-- **Commit as you go** and keep the real history. Commit the Task 1 defect fix and the filtering
-  separately from each other and from the feature work. A single squashed commit is not accepted.
-- **Where the spec is ambiguous**, make a decision, write it down in the README, and move on.
-- **Out of scope:** registration, password reset, roles, OAuth/SSO, refresh tokens, MFA,
-  notifications, CI, caching, visual redesign. Mention them under *Known limitations* instead.
+- **Filtering:** Client-only filtering was rejected because it would only filter the currently loaded
+  page and produce incorrect totals. Applying filters in the API query keeps results and pagination
+  correct for every client.
+- **Agent credentials:** A separate user table was rejected for this assessment because Agents
+  already represent the people assigned to tickets. A nullable password hash on Agent reuses that
+  identity without introducing a second account lifecycle.
+- **Password handling:** Plaintext and reversible encryption were rejected; a salted password hash
+  is appropriate because the application only needs to verify a password, never recover it.
+- **SLA state:** Persisting a separate SLA status was rejected because it could drift from the due
+  date and resolution timestamps. Deriving it keeps display and filtering consistent.
+- **Token storage:** `localStorage` was rejected because it persists across browser sessions.
+  `sessionStorage` limits persistence to the tab session, while its JavaScript access remains a
+  documented XSS trade-off.
+- **Migrations in Docker:** Automatically migrating every production API instance was rejected.
+  Compose uses Development mode for this local assessment; a real deployment should run a
+  controlled migration step before serving traffic.
 
-### DEFECT-117 root cause and fix
+## Run locally
 
-Root cause: the ticket-list request effect depended only on search, page, and page size, so
-changing another filter updated the controls without scheduling a request. A later search change
-triggered a request with the latest filter state, making the earlier selection appear stale. The fix
-requests immediately when a non-search filter changes and debounces only search input.
+Prerequisites: .NET SDK 10, Node.js compatible with the repository, and Docker Desktop.
 
-### Task 2: ticket triage, SLA and escalation
-
-- New tickets receive priority, assignment and due date in the application command handler.
-  Category flags decide forced Critical priority and specialist eligibility; category names are
-  never embedded in the rules. Eligible agents must be active, below capacity and, when required,
-  specialized. The least-loaded agent wins, with the lowest agent ID as a stable tie-break.
-- Response windows, Premium multiplier, minimum window and at-risk threshold come from the
-  `Sla` section in `appsettings.Development.json`. SLA status is derived from due/resolution
-  timestamps and the injectable clock, never stored. At risk means 25% or less of the applicable
-  response window remains, including the Premium adjustment.
-- Escalation raises priority one level, recalculates the due date from escalation time, keeps an
-  eligible current owner or reassigns, and writes a separate audit record. The history index starts
-  with `TicketId` for per-ticket retrieval and includes `EscalatedAtUtc` for newest-first ordering.
-  Deleting a ticket cascades to its audit rows; agent references are restricted to protect history.
-- Until Task 3 adds authentication, the escalation form asks for the actor name and sends it as
-  `escalatedBy`. This is a development placeholder, not verified identity.
-- The SLA list filter runs with the other query filters before SQL count, sorting and paging. The
-  ticket table and details share the same text-labelled SLA badge, including “At risk”.
-- When no eligible agent exists, the ticket is still created unassigned with a human-readable
-  explanation; intake does not fail because the team is at capacity.
-
-#### Design decisions
-
-- Keep triage policy in the application layer and ticket state transitions in the domain aggregate.
-  This keeps category display names out of business rules and makes the rules testable without SQL.
-- Store response windows and thresholds in configuration instead of hard-coding them. Derive SLA
-  state from timestamps and the injected clock instead of storing a value that could become stale.
-- Select an eligible agent by open-ticket count, then agent ID. The stable tie-break makes the
-  result predictable. If nobody qualifies, accept the ticket as unassigned and explain why.
-- Escalate exactly one priority step and reset the deadline from the escalation time. Keep a
-  separate immutable history row so the current ticket state does not erase the before/after record.
-- Until authentication is implemented, accept `escalatedBy` from the form. This is a development
-  placeholder; it is not proof of identity. The request value must be replaced by the signed-in
-  user's identity if Task 3 is completed.
-
-#### Task 2 verification
-
-- Backend unit tests cover configured SLA windows for each priority and tier, the minimum window,
-  forced Critical priority, agent eligibility and tie-breaking, escalation state/history and
-  rejected escalation cases, plus SLA boundary behavior.
-- Frontend tests cover escalation form validation, conflict handling and SLA badge states.
-- Manual browser check: create an Outage ticket and confirm Critical priority and automatic
-  assignment; create a non-Critical Billing ticket, escalate it, and confirm priority/history; set
-  an SLA filter and confirm the tickets request contains `slaStatus` in DevTools Network.
-- The SQL filter is verified by the server-side query tests, which confirm the filtered result and
-  count are calculated before paging.
-
-### Submission
-
-1. Update this **README** with what you built, your design decisions (chosen, rejected and why),
-   the defect's root cause, dev login credentials, how to run and test it, AI usage, and known
-   limitations. A reviewer must be able to run it without asking you anything.
-2. Add an **APPROACH.md** explaining your approach and thought process for each task.
-3. Commit both, then send us the **link to your fork**, the **dev login credentials**, and a
-   **rough note of time spent** on what. (If the fork is private, add the reviewers as collaborators.)
-
----
-
-## Quick start
-
-**Prerequisites:** .NET SDK 10 (`global.json`), Node.js 22 (`.nvmrc`; 20.19+ works), Docker.
-
-```bash
-cp .env.example .env          # optional, every value has a working default
-npm install                   # installs the web app
-npm run db:up                 # SQL Server 2022 in Docker on localhost:1433
-npm run api                   # terminal 1: migrates, seeds, then serves the API
-npm run web                   # terminal 2: React dev server
+```powershell
+Copy-Item .env.example .env
+npm ci
+npm run db:up
+npm run api
 ```
 
-| What | Where |
-| --- | --- |
-| Web app | http://localhost:5173 |
-| API | https://localhost:7043 (also http://localhost:5043) |
-| Swagger | https://localhost:7043/swagger |
+In a second terminal:
 
-In Development the API applies migrations and seeds demo data on startup. **Never commit real
-credentials.**
+```powershell
+npm run web
+```
 
-**Visual Studio 2026:** run `npm run db:up`, open `SupportDesk.sln`, set
-**SupportDesk.Presentation** as the startup project, and press F5 on the **https** profile.
+Open http://localhost:5173. The app redirects to `/login` first. Local demo credentials:
 
-## Tests
+- Email: `alex.turner@northwind-support.example`
+- Password: `Northwind-Local-Only-2026`
 
-```bash
-npm test                      # dotnet test, then the web tests (Vitest)
-dotnet test apps/api/tests/SupportDesk.UnitTests/SupportDesk.UnitTests.csproj
+The same fixture password is assigned to active seeded agents. The seeded inactive agent cannot
+sign in. Do not reuse the development password or signing key outside this local demo.
+
+### Run with the API container
+
+```powershell
+Copy-Item .env.example .env
+docker compose up --build
+```
+
+The API is available at http://localhost:5080 and its database health endpoint at
+http://localhost:5080/health. In another terminal, point Vite at it:
+
+```powershell
+$env:VITE_API_PROXY_TARGET = 'http://localhost:5080'
+npm run web
+```
+
+Compose waits for SQL Server health before starting the API. In Development mode, the API applies
+EF migrations and seeds the demo records on startup. Stopping the stack with `docker compose down`
+preserves the named SQL volume. `docker compose down -v` deletes that database volume and its data.
+
+### Configuration
+
+The checked-in appsettings files contain local-only examples. For Docker Compose, `.env` values
+provide the SQL password, JWT signing key and demo password. The important API environment settings
+are `ConnectionStrings__Default`, `Jwt__SigningKey`, and `DevAuth__SeedPassword`; double underscores
+map environment variables to nested .NET configuration keys. Never commit a real `.env` or
+production secret. JWT issuer, audience and lifetime are non-secret settings in `appsettings.json`;
+the development lifetime is 60 minutes. The Docker build excludes `appsettings.Development.json`
+so its local connection string and fixture credentials are not copied into the image.
+
+## Tests and checks
+
+```powershell
+dotnet test SupportDesk.sln
 npm test --workspace apps/web
 npm run lint --workspace apps/web
 npm run typecheck --workspace apps/web
+npm run build --workspace apps/web
+docker compose config -q
 ```
 
-The backend unit and architecture tests do not need a database. During this assessment run,
-`SupportDesk.sln` passed with 66 tests (62 unit and 4 architecture); the web suite passed with 9
-tests, and lint, typecheck and build completed successfully. NuGet emitted existing moderate and
-high vulnerability advisories for `System.Security.Cryptography.Pkcs` 9.0.11.
+Backend unit and architecture tests do not need a database. During this assessment run, the backend
+suite passed 70 tests (66 unit and 4 architecture), and the web suite passed 14 tests; lint,
+typecheck and build passed. The API solution build also passed. NuGet reports existing moderate and
+high advisories for `System.Security.Cryptography.Pkcs` 9.0.11; this assessment did not change that
+transitive dependency. `docker compose config -q` and `docker compose build api` passed. The
+container started after SQL Server became healthy; `/health`, login, and `/api/auth/me` all worked
+through `http://localhost:5080`.
 
-## Commands
+Manual checks:
 
-| Command | What it does |
-| --- | --- |
-| `npm run db:up` / `db:down` / `db:reset` | Start / stop / wipe SQL Server |
-| `npm run api` / `npm run web` | Run the API / the React app |
-| `npm run build` | Build both |
-| `npm run lint` / `typecheck` / `format` | Web lint and types / `dotnet format` |
-| `npm run ef -- migrations add <Name>` | Add an EF Core migration |
+1. Open `/login`, sign in, then verify the agent name and Logout control.
+2. In DevTools Network, confirm API calls carry an Authorization Bearer header.
+3. Sign out; protected routes should redirect to login. A request without a token returns 401.
+4. Create an Outage ticket and confirm forced Critical priority and automatic triage. Create a
+   non-Critical Billing ticket, escalate it, and inspect the priority and history.
+5. Filter tickets by SLA status and confirm the request query contains `slaStatus=...`.
+6. For the container, check `GET /health`, sign in, and confirm the web proxy's API request returns
+   200. The container was also checked to run as a non-root user and to exclude the development
+   settings file.
 
 ## API at a glance
 
 | Endpoint | Description |
 | --- | --- |
-| `GET /api/tickets` | Paged list with search, status, priority, category, customer, assignee, unassigned, SLA status and sort filters. Filters run before count and paging. |
-| `GET /api/tickets/{id}` | One ticket |
-| `POST /api/tickets` | Create and automatically triage a ticket; response includes decision reasons |
-| `POST /api/tickets/{id}/escalate` | Escalate with required reason and actor; returns ticket and audit row |
-| `GET /api/tickets/{id}/escalations` | Newest-first escalation history |
-| `PATCH /api/tickets/{id}/status` · `/assignment` | Change status / assignee |
-| `GET /api/customers` · `/api/agents` · `/api/categories` | Reference data |
-
-Errors are `ProblemDetails`: `400` validation, `404` not found, `409` conflict or business rule.
-
-**Seed data:** 5 categories, 6 customers (3 Premium), 6 agents (one inactive, one at their limit)
-and 40 tickets across every status, priority and SLA state.
+| `POST /api/auth/login` | Exchange agent email/password for a JWT. |
+| `GET /api/auth/me` | Return the authenticated agent; otherwise 401. |
+| `GET /api/tickets` | Paged list with search and status, priority, category, customer, assignee, unassigned, SLA and sort filters. |
+| `GET /api/tickets/{id}` | One ticket. |
+| `POST /api/tickets` | Create and automatically triage a ticket. |
+| `POST /api/tickets/{id}/escalate` | Escalate with a reason; actor is taken from the JWT. |
+| `GET /api/tickets/{id}/escalations` | Newest-first escalation history. |
+| `PATCH /api/tickets/{id}/status` and `/assignment` | Change status or assignee. |
+| `GET /api/customers`, `/api/agents`, `/api/categories` | Reference data. |
+| `GET /health` | Anonymous database reachability check; returns 200 or 503. |
 
 ## AI use and known limitations
 
-I used OpenAI Codex to interpret the requirements, inspect the code, investigate the filter defect,
-and draft or review implementation and test changes. A workflow that helped was to compare each
-acceptance criterion with the code, then verify the behavior with focused tests and browser checks.
-I kept the application-command/domain-aggregate split after checking that it matched the existing
-architecture, and expanded the test plan to include exact SLA boundaries and escalation rejection
-cases. I reviewed the generated changes and ran the test suite; I know of no remaining defect
-introduced by the AI assistance.
+OpenAI Codex assisted with interpreting requirements, inspecting the code, investigating the filter
+defect, and implementing or reviewing selected code, tests, and documentation changes. The candidate
+ran the automated checks and manually exercised the application flows. Before submission, review
+the final diff and make sure you can explain the implementation and design choices in this README
+and `APPROACH.md`.
 
-- Tasks 1 and 2 are implemented. Authentication (Task 3) and Dockerising the API (optional Task 4)
-  are not implemented in this submission.
-- There is no development login credential because authentication is not implemented. The
-  escalation actor field is user-entered until a trusted identity is available.
-- The SQL Server image and local development setup are intended for assessment, not production.
-- The dependency advisory for `System.Security.Cryptography.Pkcs` 9.0.11 remains unresolved.
+- There is no registration, password reset, refresh token, MFA, or role/permission system.
+- Logout clears this browser's session token but does not revoke a JWT already copied elsewhere;
+  it remains valid until its 60-minute expiry.
+- The Compose setup is for local assessment, not production. Production migration, secret
+  management, TLS termination, rate limiting and browser security headers need deployment-specific
+  configuration.
+- The `System.Security.Cryptography.Pkcs` 9.0.11 advisory remains unresolved.
 
-## Troubleshooting
+## Submission
 
-| Symptom | Fix |
-| --- | --- |
-| API cannot reach the database | `npm run db:up`, wait ~20 s, check `docker compose ps` |
-| Port 1433 already in use | Change the port in `docker-compose.yml` and `.env` |
-| Browser warns about the certificate | `dotnet dev-certs https --trust`, or use the web app, which proxies |
-| Web app shows "Unable to load tickets" | The API is not running, or `VITE_API_PROXY_TARGET` points at the wrong port |
-| SQL Server slow on Apple Silicon | Enable Rosetta in Docker Desktop → Settings → General |
+Keep the requested task commits separate, update this README and `APPROACH.md`, and submit the link
+to the personal fork, development credentials, and a truthful rough time breakdown for each task.
+Use your actual time records for the breakdown; do not estimate hours after the fact as if they were
+tracked. Describe AI assistance accurately and be prepared to explain and defend the implementation.

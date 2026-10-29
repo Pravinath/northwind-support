@@ -1,0 +1,12 @@
+.git
+.env
+.env.*
+!.env.example
+**/appsettings.Development.json
+**/bin/
+**/obj/
+**/node_modules/
+apps/web/
+**/.vs/
+**/.vscode/
+**/TestResults/
