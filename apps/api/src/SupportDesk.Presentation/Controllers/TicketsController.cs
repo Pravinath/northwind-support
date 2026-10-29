@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using System.Security.Claims;
 using SupportDesk.Application.Contracts.Common;
 using SupportDesk.Application.Contracts.Tickets;
 using SupportDesk.Application.Features.Tickets.Commands.AssignTicket;
@@ -61,7 +62,8 @@ public sealed class TicketsController : ControllerBase
 
     [HttpPost("{id:int}/escalate")]
     public Task<EscalationResult> Escalate(int id, EscalateTicketRequest request,
-        [FromServices] EscalateTicketCommandHandler handler, CancellationToken ct) => handler.HandleAsync(id, request, ct);
+        [FromServices] EscalateTicketCommandHandler handler, CancellationToken ct) =>
+        handler.HandleAsync(id, request, User.FindFirstValue(ClaimTypes.Name) ?? string.Empty, ct);
 
     [HttpGet("{id:int}/escalations")]
     public async Task<IReadOnlyList<TicketEscalationDto>> Escalations(int id,

@@ -30,6 +30,7 @@ public static class DependencyInjection
         services.AddScoped<IUnitOfWork>(sp => sp.GetRequiredService<SupportDbContext>());
 
         services.AddSingleton<IClock, SystemClock>();
+        services.AddScoped<IAgentPasswordHasher, AgentPasswordHasher>();
         var sla = configuration.GetSection("Sla");
         var windows = sla.GetSection("BaseWindowHours").GetChildren()
             .Where(x => double.TryParse(x.Value, out _))

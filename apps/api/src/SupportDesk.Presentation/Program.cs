@@ -1,9 +1,14 @@
 using System.Text.Json.Serialization;
+using System.Text;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.IdentityModel.Tokens;
 using SupportDesk.Application;
 using SupportDesk.Infrastructure;
 using SupportDesk.Presentation.Extensions;
 using SupportDesk.Presentation.Filters;
 using SupportDesk.Presentation.Middleware;
+using SupportDesk.Presentation.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -27,6 +32,35 @@ builder.Services.AddCors(options => options.AddPolicy(
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
+var jwtSigningKey = builder.Configuration["Jwt:SigningKey"]
+    ?? throw new InvalidOperationException("Jwt:SigningKey is missing from configuration.");
+if (Encoding.UTF8.GetByteCount(jwtSigningKey) < 32)
+{
+    throw new InvalidOperationException("Jwt:SigningKey must contain at least 32 UTF-8 bytes.");
+}
+
+var jwtIssuer = builder.Configuration["Jwt:Issuer"] ?? throw new InvalidOperationException("Jwt:Issuer is missing.");
+var jwtAudience = builder.Configuration["Jwt:Audience"] ?? throw new InvalidOperationException("Jwt:Audience is missing.");
+if (!int.TryParse(builder.Configuration["Jwt:LifetimeMinutes"], out var jwtLifetimeMinutes) || jwtLifetimeMinutes <= 0)
+{
+    throw new InvalidOperationException("Jwt:LifetimeMinutes must be a positive integer.");
+}
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options => options.TokenValidationParameters = new TokenValidationParameters
+    {
+        ValidateIssuer = true,
+        ValidIssuer = jwtIssuer,
+        ValidateAudience = true,
+        ValidAudience = jwtAudience,
+        ValidateIssuerSigningKey = true,
+        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSigningKey)),
+        ValidateLifetime = true,
+        ClockSkew = TimeSpan.Zero
+    });
+builder.Services.AddAuthorization(options =>
+    options.FallbackPolicy = new AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build());
+builder.Services.AddSingleton<JwtTokenService>();
+
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
 
@@ -44,7 +78,15 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseCors(FrontendCorsPolicy);
+app.UseAuthentication();
+app.UseAuthorization();
 
 app.MapControllers();
+
+app.MapGet("/health", async (SupportDesk.Infrastructure.Data.SupportDbContext db, CancellationToken ct) =>
+    await db.Database.CanConnectAsync(ct)
+        ? Results.Ok(new { status = "Healthy" })
+        : Results.StatusCode(StatusCodes.Status503ServiceUnavailable))
+    .AllowAnonymous();
 
 app.Run();

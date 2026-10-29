@@ -1,6 +1,7 @@
 using FluentValidation;
 using Microsoft.Extensions.DependencyInjection;
 using SupportDesk.Application.Features.Agents.Queries.GetAgents;
+using SupportDesk.Application.Features.Auth;
 using SupportDesk.Application.Features.Categories.Queries.GetCategories;
 using SupportDesk.Application.Features.Customers.Queries.GetCustomer;
 using SupportDesk.Application.Features.Customers.Queries.GetCustomers;
@@ -19,6 +20,7 @@ public static class DependencyInjection
 {
     public static IServiceCollection AddApplication(this IServiceCollection services)
     {
+        services.AddScoped<LoginCommandHandler>();
         services.AddScoped<RaiseTicketCommandHandler>();
         services.AddScoped<SupportDesk.Application.Features.Tickets.Commands.EscalateTicket.EscalateTicketCommandHandler>();
         services.AddScoped<ChangeTicketStatusCommandHandler>();

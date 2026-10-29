@@ -5,6 +5,19 @@ import type { ProblemDetails } from '../types/api';
  * to the backend; set VITE_API_BASE_URL to point a build somewhere else. See .env.example.
  */
 const baseUrl = import.meta.env.VITE_API_BASE_URL ?? '/api';
+const tokenKey = 'northwind-support.access-token';
+
+export function getAccessToken(): string | null {
+  return sessionStorage.getItem(tokenKey);
+}
+
+export function setAccessToken(token: string): void {
+  sessionStorage.setItem(tokenKey, token);
+}
+
+export function clearAccessToken(): void {
+  sessionStorage.removeItem(tokenKey);
+}
 
 /** A failed HTTP call, carrying the problem document the API returned. */
 export class ApiError extends Error {
@@ -30,16 +43,23 @@ export class ApiError extends Error {
  * {@link ApiError} that callers can show to the user.
  */
 export async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const headers = new Headers(init?.headers);
+  if (!headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
+  const token = getAccessToken();
+  if (token) headers.set('Authorization', `Bearer ${token}`);
+
   const response = await fetch(`${baseUrl}${path}`, {
     ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(init?.headers ?? {}),
-    },
+    headers,
   });
 
   if (!response.ok) {
     const problem = await readProblem(response);
+
+    if (response.status === 401) {
+      clearAccessToken();
+      window.dispatchEvent(new CustomEvent('northwind-support:unauthorized'));
+    }
 
     throw new ApiError(
       response.status,

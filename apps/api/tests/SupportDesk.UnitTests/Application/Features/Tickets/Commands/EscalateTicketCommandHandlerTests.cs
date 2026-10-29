@@ -26,7 +26,7 @@ public sealed class EscalateTicketCommandHandlerTests
         var now = context.Clock.UtcNow;
 
         var result = await context.EscalateTicket.HandleAsync(0,
-            new EscalateTicketRequest("Customer impact has increased.", "Team lead"), CancellationToken.None);
+            new EscalateTicketRequest("Customer impact has increased."), "Team lead", CancellationToken.None);
 
         Assert.Equal(TicketPriority.High, ticket.Priority);
         Assert.Equal(now.AddHours(8), ticket.DueAtUtc);
@@ -64,7 +64,7 @@ public sealed class EscalateTicketCommandHandlerTests
             ]);
 
         await context.EscalateTicket.HandleAsync(0,
-            new EscalateTicketRequest("Need specialist ownership.", "Team lead"), CancellationToken.None);
+            new EscalateTicketRequest("Need specialist ownership."), "Team lead", CancellationToken.None);
 
         Assert.Equal(6, ticket.AssignedAgentId);
         Assert.Equal(4, context.AddedEscalation!.FromAgentId);
@@ -84,7 +84,7 @@ public sealed class EscalateTicketCommandHandlerTests
             .ReturnsAsync([new TriageAgent(4, "Sara", false, 5, 1, [1])]);
 
         var result = await context.EscalateTicket.HandleAsync(0,
-            new EscalateTicketRequest("No agent can take this.", "Team lead"), CancellationToken.None);
+            new EscalateTicketRequest("No agent can take this."), "Team lead", CancellationToken.None);
 
         Assert.Null(ticket.AssignedAgentId);
         Assert.Null(context.AddedEscalation!.ToAgentId);
@@ -103,7 +103,7 @@ public sealed class EscalateTicketCommandHandlerTests
         context.CaptureEscalation();
 
         var exception = await Assert.ThrowsAsync<BusinessRuleViolationException>(() => context.EscalateTicket.HandleAsync(
-            0, new EscalateTicketRequest("Escalation reason.", "Team lead"), CancellationToken.None));
+            0, new EscalateTicketRequest("Escalation reason."), "Team lead", CancellationToken.None));
 
         Assert.Contains(priority == TicketPriority.Critical ? "Critical" : status.ToString(), exception.Message);
         context.EscalationHistory.Verify(h => h.AddAsync(It.IsAny<TicketEscalation>(), It.IsAny<CancellationToken>()), Times.Never());
@@ -117,20 +117,20 @@ public sealed class EscalateTicketCommandHandlerTests
         context.Tickets.Setup(t => t.GetByIdAsync(999, It.IsAny<CancellationToken>())).ReturnsAsync((Ticket?)null);
 
         await Assert.ThrowsAsync<NotFoundException>(() => context.EscalateTicket.HandleAsync(
-            999, new EscalateTicketRequest("Escalation reason.", "Team lead"), CancellationToken.None));
+            999, new EscalateTicketRequest("Escalation reason."), "Team lead", CancellationToken.None));
         context.VerifySaved(Times.Never());
     }
 
     [Theory]
     [InlineData("four", "Team lead")]
-    [InlineData("This reason is longer than the maximum allowed by the endpoint.", "")]
+    [InlineData("Valid escalation reason.", "")]
     [InlineData("Valid escalation reason.", "This actor name is intentionally longer than one hundred characters to verify validation rejects an oversized actor value before any ticket lookup or database write is performed by this handler.")]
     public async Task HandleAsync_WhenReasonOrActorIsInvalid_RejectsBeforeLoadingTicket(string reason, string actor)
     {
         var context = new TicketCommandTestContext();
 
         await Assert.ThrowsAsync<ValidationException>(() => context.EscalateTicket.HandleAsync(
-            1, new EscalateTicketRequest(reason, actor), CancellationToken.None));
+            1, new EscalateTicketRequest(reason), actor, CancellationToken.None));
 
         context.Tickets.Verify(t => t.GetByIdAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never());
         context.VerifySaved(Times.Never());
@@ -148,7 +148,7 @@ public sealed class EscalateTicketCommandHandlerTests
         var reason = new string('R', 500);
 
         await context.EscalateTicket.HandleAsync(0,
-            new EscalateTicketRequest(reason, "Lead"), CancellationToken.None);
+            new EscalateTicketRequest(reason), "Lead", CancellationToken.None);
 
         Assert.Equal(500, context.AddedEscalation!.Reason.Length);
     }
@@ -159,7 +159,7 @@ public sealed class EscalateTicketCommandHandlerTests
         var context = new TicketCommandTestContext();
 
         await Assert.ThrowsAsync<ValidationException>(() => context.EscalateTicket.HandleAsync(
-            1, new EscalateTicketRequest(new string('R', 501), "Team lead"), CancellationToken.None));
+            1, new EscalateTicketRequest(new string('R', 501)), "Team lead", CancellationToken.None));
 
         context.Tickets.Verify(t => t.GetByIdAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never());
         context.VerifySaved(Times.Never());

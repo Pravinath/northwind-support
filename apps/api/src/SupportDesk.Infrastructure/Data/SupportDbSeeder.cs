@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Configuration;
 using SupportDesk.Application.Abstractions;
 using SupportDesk.Domain.Aggregates.Agents;
 using SupportDesk.Domain.Aggregates.Categories;
@@ -17,13 +18,15 @@ namespace SupportDesk.Infrastructure.Data;
 /// Every aggregate is built through its own behaviour. The two historical values no behaviour
 /// produces - a ticket's last update and its due date - are set through EF Core directly.
 /// </remarks>
-public sealed class SupportDbSeeder(SupportDbContext db, IClock clock, ILogger<SupportDbSeeder> logger)
+public sealed class SupportDbSeeder(SupportDbContext db, IClock clock, ILogger<SupportDbSeeder> logger,
+    IAgentPasswordHasher passwordHasher, IConfiguration configuration)
 {
     /// <summary>Seeds the database, unless it already has tickets in it.</summary>
     public async Task SeedAsync(CancellationToken ct = default)
     {
         if (await db.Set<Ticket>().AnyAsync(ct))
         {
+            await ProvisionMissingDevelopmentPasswordsAsync(ct);
             logger.LogInformation("Seed data already present; skipping.");
             return;
         }
@@ -39,6 +42,8 @@ public sealed class SupportDbSeeder(SupportDbContext db, IClock clock, ILogger<S
         db.AddRange(agents);
         await db.SaveChangesAsync(ct);
 
+        await ProvisionMissingDevelopmentPasswordsAsync(ct);
+
         SeedSpecializations(agents, categories);
         await db.SaveChangesAsync(ct);
 
@@ -48,6 +53,20 @@ public sealed class SupportDbSeeder(SupportDbContext db, IClock clock, ILogger<S
         logger.LogInformation(
             "Seeded {Categories} categories, {Customers} customers, {Agents} agents and {Tickets} tickets.",
             categories.Count, customers.Count, agents.Count, await db.Set<Ticket>().CountAsync(ct));
+    }
+
+    private async Task ProvisionMissingDevelopmentPasswordsAsync(CancellationToken ct)
+    {
+        var password = configuration["DevAuth:SeedPassword"]
+            ?? throw new InvalidOperationException("DevAuth:SeedPassword must be configured for development seeding.");
+
+        var agents = await db.Set<Agent>().ToListAsync(ct);
+        foreach (var agent in agents.Where(x => string.IsNullOrWhiteSpace(x.PasswordHash)))
+        {
+            agent.SetPasswordHash(passwordHasher.Hash(agent, password));
+        }
+
+        await db.SaveChangesAsync(ct);
     }
 
     private static List<Category> SeedCategories() =>

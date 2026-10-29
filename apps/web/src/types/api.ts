@@ -174,3 +174,15 @@ export interface ProblemDetails {
   traceId?: string;
   errors?: Record<string, string[]>;
 }
+
+export interface CurrentAgent {
+  id: number;
+  fullName: string;
+  email: string;
+}
+
+export interface LoginResponse {
+  accessToken: string;
+  expiresAtUtc: string;
+  agent: CurrentAgent;
+}

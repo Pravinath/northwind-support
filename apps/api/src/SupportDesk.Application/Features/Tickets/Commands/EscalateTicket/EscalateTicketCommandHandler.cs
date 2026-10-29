@@ -12,10 +12,10 @@ public sealed class EscalateTicketCommandHandler(ITicketRepository tickets, ITic
     ITicketTriageQueries triage, IUnitOfWork unitOfWork, IClock clock, TicketTriageOptions options,
     GetTicketQueryHandler getTicket)
 {
-    public async Task<EscalationResult> HandleAsync(int id, EscalateTicketRequest request, CancellationToken ct)
+    public async Task<EscalationResult> HandleAsync(int id, EscalateTicketRequest request, string escalatedBy, CancellationToken ct)
     {
         var reason = request.Reason?.Trim() ?? "";
-        var actor = request.EscalatedBy?.Trim() ?? "";
+        var actor = escalatedBy?.Trim() ?? "";
         if (reason.Length is < 5 or > 500) throw new ValidationException(new Dictionary<string, string[]> { ["Reason"] = ["Reason must contain between 5 and 500 characters."] });
         if (actor.Length is < 1 or > 100) throw new ValidationException(new Dictionary<string, string[]> { ["EscalatedBy"] = ["An actor is required (maximum 100 characters)."] });
         var ticket = await tickets.GetByIdAsync(id, ct) ?? throw new NotFoundException("Ticket", id);

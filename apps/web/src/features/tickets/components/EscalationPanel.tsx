@@ -8,7 +8,6 @@ interface EscalationPanelProps { ticket: TicketDetail; onUpdated: (ticket: Ticke
 
 export function EscalationPanel({ ticket, onUpdated }: EscalationPanelProps) {
   const [reason, setReason] = useState('');
-  const [escalatedBy, setEscalatedBy] = useState('Team lead');
   const [history, setHistory] = useState<TicketEscalation[]>([]);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string>();
@@ -31,12 +30,9 @@ export function EscalationPanel({ ticket, onUpdated }: EscalationPanelProps) {
     if (cleanReason.length < 5 || cleanReason.length > 500) {
       setValidation('Enter an escalation reason between 5 and 500 characters.'); return;
     }
-    if (escalatedBy.trim().length < 1 || escalatedBy.trim().length > 100) {
-      setValidation('Enter who is escalating (maximum 100 characters).'); return;
-    }
     setValidation(undefined); setError(undefined); setPending(true);
     try {
-      await ticketsApi.escalate(ticket.id, cleanReason, escalatedBy.trim());
+      await ticketsApi.escalate(ticket.id, cleanReason);
       const [updated, entries] = await Promise.all([ticketsApi.getTicket(ticket.id), ticketsApi.getEscalations(ticket.id)]);
       onUpdated(updated); setHistory(entries); setReason('');
     } catch (caught) {
@@ -52,10 +48,6 @@ export function EscalationPanel({ ticket, onUpdated }: EscalationPanelProps) {
       <div className="field">
         <label className="field__label" htmlFor="escalation-reason">Reason (5–500 characters)</label>
         <textarea id="escalation-reason" rows={3} maxLength={500} value={reason} onChange={(event) => setReason(event.target.value)} />
-      </div>
-      <div className="field">
-        <label className="field__label" htmlFor="escalated-by">Escalated by</label>
-        <input id="escalated-by" value={escalatedBy} maxLength={100} onChange={(event) => setEscalatedBy(event.target.value)} />
       </div>
       {validation && <p className="field__error" role="alert">{validation}</p>}
       <button className="button button--ghost" type="submit" disabled={pending}>{pending ? 'Escalating…' : 'Escalate ticket'}</button>
